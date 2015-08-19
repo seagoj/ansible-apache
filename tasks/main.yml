@@ -1,0 +1,63 @@
+---
+- name: Download Apache
+  get_url:
+    url: "http://archive.apache.org/dist/httpd/httpd-{{ apache_version }}.tar.gz"
+    dest: "/tmp/httpd-{{ apache_version }}.tar.gz"
+
+- name: Unpack Apache
+  unarchive:
+    src: "/tmp/httpd-{{ apache_version }}.tar.gz"
+    dest: /tmp
+    copy: no
+
+- name: Install Apache
+  command: "{{ item }}"
+  args:
+    creates: "{{ apache_prefix }}/bin/apachectl"
+    chdir: "/tmp/httpd-{{ apache_version }}"
+  with_items:
+    - ./configure
+      --enable-so
+      --enable-ssl
+      --enable-deflate
+      --enable-rewrite=shared
+      --enable-info
+      --disable-userdir
+      --disable-cgid
+      --disable-cgi
+      --disable-include
+      --enable-mods-shared=most
+    - make
+    - make install
+
+- name: Symlink apachectl
+  file:
+    src: "{{ apache_prefix }}/bin/apachectl"
+    dest: /usr/local/bin/apachectl
+    state: link
+
+- name: Create group
+  group:
+    name: www
+    state: present
+
+- name: Create user
+  user:
+    name: www
+    group: www
+    state: present
+
+- name: Create Apache Service
+  template:
+    src: httpd.service.j2
+    dest: /etc/init.d/httpd
+    mode: 0755
+
+- name: open port 80
+  command: iptables -I INPUT 1 -p tcp -m state --state NEW -m tcp --dport {{ apache_port }} -j ACCEPT
+
+- name: Save firewall settings
+  command: service iptables save
+
+- name: Install Apache Service and run at boot
+  command: chkconfig --add httpd
